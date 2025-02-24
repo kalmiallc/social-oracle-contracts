@@ -58,6 +58,10 @@ contract SocialOracle is AccessControl {
 
     uint256 public minVotes; // minimal required votes in case of voting
 
+    mapping(address => uint256) public userFee;
+
+    event UserFeeSet(address indexed user, uint256 fee);
+
     constructor(
         address _admin,
         address _conditionalTokens,
@@ -254,6 +258,17 @@ contract SocialOracle is AccessControl {
         payouts[winnerId] = 1;
 
         conditionalTokens.reportPayouts(questionId, payouts);
+    }
+
+    function setUserFee(
+        address[] calldata users, 
+        uint256[] calldata fees
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(users.length == fees.length, "Array mismatch");
+        for(uint256 i = 0; i < users.length; i++) {
+            userFee[users[i]] = fees[i];
+            emit UserFeeSet(users[i], fees[i]);
+        }
     }
 
     /**

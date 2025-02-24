@@ -8,7 +8,7 @@ const {
 const { randomHex } = require('./helpers/utils.js');
 
 describe('FixedProductMarketMaker', function() {
-    let creator, oracle, investor1, trader, investor2, treasury;
+    let creator, ORACLE, investor1, trader, investor2, treasury;
     const questionId = randomHex(32);
     const numOutcomes = 3; // 64 originally from gnosis tests
     let conditionId;
@@ -24,29 +24,46 @@ describe('FixedProductMarketMaker', function() {
     let marketMakerPool;
 
     before(async function() {
-        [, creator, oracle, investor1, trader, investor2, treasury] = await ethers.getSigners();
-        
-        conditionId = getConditionId(oracle.address, questionId, numOutcomes);
-        collectionIds = Array.from(
-            { length: numOutcomes },
-            (_, i) => getCollectionId(conditionId, BigInt(1) << BigInt(i))
-        );
+        [owner, creator, investor1, trader, investor2, treasury, verification] = await ethers.getSigners();
 
         const ConditionalTokens = await ethers.getContractFactory("ConditionalTokens");
         const WETH9 = await ethers.getContractFactory("MockCoin");
         const FixedProductMarketMakerFactory = await ethers.getContractFactory("FixedProductMarketMakerFactory");
 
         conditionalTokens = await ConditionalTokens.deploy();
+        await conditionalTokens.deployed();
+
         collateralToken = await WETH9.deploy();
+        await collateralToken.deployed();
+
         fixedProductMarketMakerFactory = await FixedProductMarketMakerFactory.deploy();
+        await fixedProductMarketMakerFactory.deployed();
+
+        const ORACLEF = await ethers.getContractFactory("SocialOracle");
+        ORACLE = await ORACLEF.deploy(
+            owner.address, // admin
+            conditionalTokens.address, // conditionalTokens
+            verification.address, // verification
+            3, // minVotes
+        );
+        await ORACLE.deployed();
+        
+        conditionId = getConditionId(ORACLE.address, questionId, numOutcomes);
+        collectionIds = Array.from(
+            { length: numOutcomes },
+            (_, i) => getCollectionId(conditionId, BigInt(1) << BigInt(i))
+        );
 
         positionIds = collectionIds.map(collectionId => 
             getPositionId(collateralToken.address, collectionId)
         );
+
+        // Set lower fee to trader
+        // await ORACLE.setUserFee([trader.address], [ethers.utils.parseEther("0.002")]);
     });
 
     it('can be created by factory', async function() {
-        await conditionalTokens.prepareCondition(oracle.address, questionId, numOutcomes);
+        await conditionalTokens.prepareCondition(ORACLE.address, questionId, numOutcomes);
         
         const createArgs = [
             conditionalTokens.address,
@@ -54,7 +71,8 @@ describe('FixedProductMarketMaker', function() {
             [conditionId],
             feeFactor,
             treasuryPercent,
-            treasury.address
+            treasury.address,
+            ORACLE.address
         ];
 
         const fixedProductMarketMakerAddress = await fixedProductMarketMakerFactory
@@ -76,7 +94,8 @@ describe('FixedProductMarketMaker', function() {
                 [conditionId],
                 feeFactor,
                 treasuryPercent,
-                treasury.address
+                treasury.address,
+                ORACLE.address
             );
 
         fixedProductMarketMaker = await ethers.getContractAt(
@@ -131,7 +150,7 @@ describe('FixedProductMarketMaker', function() {
 
         // feeAmount (LP + treasuryFee)
         const feeAmount = investmentAmount.mul(feeFactor).div(ethers.utils.parseEther("1.0"));
-        const outcomeTokensToBuy = await fixedProductMarketMaker.calcBuyAmount(investmentAmount, buyOutcomeIndex);
+        const outcomeTokensToBuy = await fixedProductMarketMaker.calcBuyAmount(investmentAmount, buyOutcomeIndex, trader.address);
 
         await fixedProductMarketMaker.connect(trader).buy(investmentAmount, buyOutcomeIndex, outcomeTokensToBuy);
 
@@ -186,7 +205,7 @@ describe('FixedProductMarketMaker', function() {
             ethers.utils.parseEther("1.0").sub(feeFactor)
         );
 
-        const outcomeTokensToSell = await fixedProductMarketMaker.calcSellAmount(returnAmount, sellOutcomeIndex);
+        const outcomeTokensToSell = await fixedProductMarketMaker.calcSellAmount(returnAmount, sellOutcomeIndex, trader.address);
 
         // calc of shares
         const posIds = [

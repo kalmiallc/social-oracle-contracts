@@ -5,7 +5,7 @@ require('solidity-coverage');
 require("@nomiclabs/hardhat-waffle");
 require('@nomiclabs/hardhat-etherscan');
 
-const { privateKeyTestnet, privateKeyMainnet, coston2RpcApi, baseSepoliaApiKey } = require('./secrets.json');
+const { privateKeyTestnet, privateKeyMainnet, baseSepoliaApiKey } = require('./secrets.json');
 
 /**
  * @type import('hardhat/config').HardhatUserConfig
@@ -34,13 +34,6 @@ module.exports = {
       accounts: [privateKeyTestnet], 
       gasPrice: 'auto',
       explorer: "https://sepolia.basescan.org/",
-    },
-    coston2: {
-      url: `https://coston2-api.flare.network/ext/C/rpc?x-apikey=${coston2RpcApi}`,
-      chainId: 114,
-      accounts: [privateKeyTestnet], 
-      gasPrice: 'auto',
-      explorer: "https://coston2.testnet.flarescan.com/",
     },
     celestiaTestnet: {
       url: `https://rpc.opcelestia-raspberry.gelato.digital`,

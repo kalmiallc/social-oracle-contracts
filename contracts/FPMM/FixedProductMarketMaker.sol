@@ -6,6 +6,7 @@ import { ConditionalTokens } from "./../ConditionalTokens/ConditionalTokens.sol"
 import { CTHelpers } from "./../ConditionalTokens/CTHelpers.sol";
 import { ERC1155TokenReceiver } from "./../ConditionalTokens/ERC1155/ERC1155TokenReceiver.sol";
 import { ERC20 } from "./ERC20.sol";
+import { IOracle } from "./interfaces/IOracle.sol";
 
 
 library CeilDiv {
@@ -55,6 +56,7 @@ contract FixedProductMarketMaker is ERC20, ERC1155TokenReceiver {
     uint public fee;
     uint internal feePoolWeight;
 
+    address public oracle;
     address public treasury;
     uint public treasuryPercent;
     uint public constant percentUL = 10000; // upper limit
@@ -278,11 +280,19 @@ contract FixedProductMarketMaker is ERC20, ERC1155TokenReceiver {
         return 0x0;
     }
 
-    function calcBuyAmount(uint investmentAmount, uint outcomeIndex) public view returns (uint) {
+    function getTradingFee(address user) public view returns(uint256) {
+        uint256 userFee = IOracle(oracle).userFee(user);
+        return userFee > 0 && userFee < fee ? userFee : fee;
+    }
+
+    function calcBuyAmount(uint investmentAmount, uint outcomeIndex, address user) public view returns (uint) {
         require(outcomeIndex < positionIds.length, "invalid outcome index");
 
+        // get trading fee from oracle
+        uint256 _fee = getTradingFee(user);
+
         uint[] memory poolBalances = getPoolBalances();
-        uint investmentAmountMinusFees = investmentAmount.sub(investmentAmount.mul(fee) / ONE);
+        uint investmentAmountMinusFees = investmentAmount.sub(investmentAmount.mul(_fee) / ONE);
         uint buyTokenPoolBalance = poolBalances[outcomeIndex];
         uint endingOutcomeBalance = buyTokenPoolBalance.mul(ONE);
         for(uint i = 0; i < poolBalances.length; i++) {
@@ -298,11 +308,14 @@ contract FixedProductMarketMaker is ERC20, ERC1155TokenReceiver {
         return buyTokenPoolBalance.add(investmentAmountMinusFees).sub(endingOutcomeBalance.ceildiv(ONE));
     }
 
-    function calcSellAmount(uint returnAmount, uint outcomeIndex) public view returns (uint outcomeTokenSellAmount) {
+    function calcSellAmount(uint returnAmount, uint outcomeIndex, address user) public view returns (uint outcomeTokenSellAmount) {
         require(outcomeIndex < positionIds.length, "invalid outcome index");
 
+        // get trading fee from oracle
+        uint256 _fee = getTradingFee(user);
+
         uint[] memory poolBalances = getPoolBalances();
-        uint returnAmountPlusFees = returnAmount.mul(ONE) / ONE.sub(fee);
+        uint returnAmountPlusFees = returnAmount.mul(ONE) / ONE.sub(_fee);
         uint sellTokenPoolBalance = poolBalances[outcomeIndex];
         uint endingOutcomeBalance = sellTokenPoolBalance.mul(ONE);
         for(uint i = 0; i < poolBalances.length; i++) {
@@ -319,12 +332,15 @@ contract FixedProductMarketMaker is ERC20, ERC1155TokenReceiver {
     }
 
     function buy(uint investmentAmount, uint outcomeIndex, uint minOutcomeTokensToBuy) external {
-        uint outcomeTokensToBuy = calcBuyAmount(investmentAmount, outcomeIndex);
+        uint outcomeTokensToBuy = calcBuyAmount(investmentAmount, outcomeIndex, msg.sender);
         require(outcomeTokensToBuy >= minOutcomeTokensToBuy, "minimum buy amount not reached");
 
         require(collateralToken.transferFrom(msg.sender, address(this), investmentAmount), "cost transfer failed");
 
-        uint feeAmount = investmentAmount.mul(fee) / ONE;
+        // get trading fee from oracle
+        uint256 _fee = getTradingFee(msg.sender);
+
+        uint feeAmount = investmentAmount.mul(_fee) / ONE;
         feePoolWeight = feePoolWeight.add(feeAmount);
         uint investmentAmountMinusFees = investmentAmount.sub(feeAmount);
         require(collateralToken.approve(address(conditionalTokens), investmentAmountMinusFees), "approval for splits failed");
@@ -336,12 +352,15 @@ contract FixedProductMarketMaker is ERC20, ERC1155TokenReceiver {
     }
 
     function sell(uint returnAmount, uint outcomeIndex, uint maxOutcomeTokensToSell) external {
-        uint outcomeTokensToSell = calcSellAmount(returnAmount, outcomeIndex);
+        uint outcomeTokensToSell = calcSellAmount(returnAmount, outcomeIndex, msg.sender);
         require(outcomeTokensToSell <= maxOutcomeTokensToSell, "maximum sell amount exceeded");
 
         conditionalTokens.safeTransferFrom(msg.sender, address(this), positionIds[outcomeIndex], outcomeTokensToSell, "");
 
-        uint feeAmount = returnAmount.mul(fee) / (ONE.sub(fee));
+        // get trading fee from oracle
+        uint256 _fee = getTradingFee(msg.sender);
+
+        uint feeAmount = returnAmount.mul(_fee) / (ONE.sub(_fee));
         feePoolWeight = feePoolWeight.add(feeAmount);
         uint returnAmountPlusFees = returnAmount.add(feeAmount);
         mergePositionsThroughAllConditions(returnAmountPlusFees);
@@ -395,6 +414,7 @@ contract FixedProductMarketMakerData {
     uint internal fee;
     uint internal feePoolWeight;
 
+    address internal oracle;
     address internal treasury;
     uint internal treasuryPercent;
     uint internal constant percentUL = 10000; // upper limit
