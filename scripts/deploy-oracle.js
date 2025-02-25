@@ -3,11 +3,11 @@ const hre = require("hardhat");
 async function main() {
   const [signer] = await ethers.getSigners();
 
-  const ContractF = await hre.ethers.getContractFactory("IgniteOracle");
+  const ContractF = await hre.ethers.getContractFactory("SocialOracle");
 
   const args = [
     signer.address, // admin
-    "0x2346Cfa50e396BeFC2242763eD15Ca0aab1E9a79", // conditionalTokens
+    "0x97C72b91F953cC6142ebA598fa376B80fbACA1C2", // conditionalTokens
     "0x6160911D481b18ad9d2EBDE9E32866F8eE020FbD", // verification
     3, // minVotes
   ]
@@ -20,7 +20,7 @@ async function main() {
   await contr.deployed();
 
   console.log(
-    "IgniteOracle deployed to: %saddress/%s",
+    "SocialOracle deployed to: %saddress/%s",
     hre.network.config.explorer,
     contr.address
   );
